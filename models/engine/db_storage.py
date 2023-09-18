@@ -1,44 +1,33 @@
 #!/usr/bin/python3
-""" New Engine """
+"""This module defines a class to manage file storage for hbnb clone"""
 from sqlalchemy import create_engine
-from models.base_model import Base
+from sqlalchemy.orm import sessionmaker, scoped_session
+import os
 from models.state import State
-from models.city import City
-from models.user import User
-from models.place import Place
-from models.review import Review
-from models.amenity import Amenity
-from sqlalchemy.orm import sessionmaker
-from os import getenv
-classes = {"Amenity": Amenity, "City": City,
-           "Place": Place, "Review": Review, "State": State, "User": User}
 
 
 class DBStorage:
-    """This class manages storage of hbnb models in JSON format"""
+    """This class manages storage of hbnb models in the
+    database with sqlalchemy
+    """
     __engine = None
     __session = None
 
     def __init__(self):
-        self.__engine = create_engine(
-            "mysql+mysqldb://{}:{}@{}/{}"
-            .format(getenv('HBNB_MYSQL_USER'),
-                    getenv('HBNB_MYSQL_PWD'),
-                    getenv('HBNB_MYSQL_HOST'),
-                    getenv('HBNB_MYSQL_DB')),
-            pool_pre_ping=True)
-        if getenv('HBNB_ENV') == 'test':
-            Base.metadata.drop_all(self.__engine)
+        user = os.getenv('HBNB_MYSQL_USER')
+        pwd = os.getenv('HBNB_MYSQL_PWD')
+        h = os.getenv('HBNB_MYSQL_HOST')
+        db = os.getenv('HBNB_MYSQL_DB')
+        self.__engine = create_engine(f"mariadb+mariadbconnector://{user}:{pwd}@{h}/{db}",
+                                      pool_pre_ping=True)
 
     def all(self, cls=None):
-        new_dict = {}
-        for clss in classes:
-            if cls is None or cls is classes[clss] or cls is clss:
-                objs = self.__session.query(classes[clss]).all()
-                for obj in objs:
-                    key = obj.__class__.__name__ + '.' + obj.id
-                    new_dict[key] = obj
-        return (new_dict)
+        dic = {}
+        if cls is not None:
+            di = self.__session.query(cls).all()
+            for row in di:
+                dic[f"{row.__class__.__name__}.{row.id}"] = row
+        return dic
 
     def new(self, obj):
         self.__session.add(obj)
@@ -47,14 +36,28 @@ class DBStorage:
         self.__session.commit()
 
     def delete(self, obj=None):
-        if obj:
-            self.__session.delete(obj)
+        if obj is not None:
+            self.__session.query(obj.__class__
+                                 ).filter_by(id=obj.id
+                                             ).delete(
+                synchronize_session=False
+            )
 
     def reload(self):
+        """Loads storage dictionary from a database"""
+        from models.base_model import BaseModel, Base
+        from models.user import User
+        from models.place import Place
+        from models.state import State
+        from models.city import City
+        from models.amenity import Amenity
+        from models.review import Review
+
+        Session = sessionmaker(bind=self.__engine, expire_on_commit=False)
+        self.__session = scoped_session(Session)
+
         Base.metadata.create_all(self.__engine)
-        Session = sessionmaker()
-        Session.configure(bind=self.__engine, expire_on_commit=False)
-        self.__session = Session()
 
     def close(self):
-        self.__session.close()
+        """Method on the private session attribute"""
+        self.__session.remove()
